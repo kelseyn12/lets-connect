@@ -44,7 +44,6 @@ export async function matchWord(word: string) {
         // You're already waiting — avoid self-match
         return { matched: false };
       }
-
       // Create a chat room
       const chatRoomRef = await addDoc(collection(db, "chatRooms"), {
         word,
