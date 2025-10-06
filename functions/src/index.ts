@@ -1,38 +1,40 @@
-import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 
 admin.initializeApp();
 const db = admin.firestore();
 
 // 🧹 Scheduled function — runs every 5 minutes
-export const cleanupOldEntries = functions.pubsub
-  .schedule("every 5 minutes")
-  .onRun(async () => {
-    const now = admin.firestore.Timestamp.now();
+export const cleanupOldEntries = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    timeZone: "America/Chicago", // optional
+  },
+  async (event): Promise<void> => {
     const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
 
-    // 🧹 Delete waitingWords older than 3 minutes
+    // Delete waitingWords older than 3 minutes
     const waitingSnap = await db
       .collection("waitingWords")
-      .where("createdAt", "<", admin.firestore.Timestamp.fromDate(threeMinutesAgo))
+      .where("createdAt", "<", threeMinutesAgo)
       .get();
 
     for (const doc of waitingSnap.docs) {
       await doc.ref.delete();
     }
-    console.log(`🧹 Deleted ${waitingSnap.size} old waitingWords`);
 
-    // 🧹 Delete chatRooms older than 10 minutes
-    const chatSnap = await db
+    // Delete inactive chatRooms older than 10 minutes
+    const roomsSnap = await db
       .collection("chatRooms")
-      .where("createdAt", "<", admin.firestore.Timestamp.fromDate(tenMinutesAgo))
+      .where("active", "==", false)
+      .where("createdAt", "<", tenMinutesAgo)
       .get();
 
-    for (const doc of chatSnap.docs) {
+    for (const doc of roomsSnap.docs) {
       await doc.ref.delete();
     }
-    console.log(`🧹 Deleted ${chatSnap.size} old chatRooms`);
 
-    return null;
-  });
+    console.log("Cleanup completed at", new Date().toISOString());
+  }
+);

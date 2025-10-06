@@ -3,10 +3,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { onSnapshot, collection, query, where } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 
+
 export default function Connecting() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [status, setStatus] = useState("Looking for a match...");
+  const [_status, setStatus] = useState("Looking for a match...");
 
   // Get word from URL
   const params = new URLSearchParams(location.search);
@@ -33,9 +34,13 @@ export default function Connecting() {
   }, [word]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-yellow-100">
-      <h1 className="text-4xl font-bold text-yellow-800 mb-6">Connecting...</h1>
-      <p className="text-lg text-yellow-700 animate-pulse">{status}</p>
+    <div className="flex items-center justify-center h-screen bg-gradient-to-br from-blue-100 to-purple-200">
+      <div className="text-3xl font-semibold text-gray-800 flex gap-1">
+        <span>Connecting</span>
+        <span className="animate-pulse">.</span>
+        <span className="animate-pulse delay-75">.</span>
+        <span className="animate-pulse delay-150">.</span>
+      </div>
     </div>
   );
 }

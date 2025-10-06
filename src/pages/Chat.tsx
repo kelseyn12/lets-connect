@@ -32,7 +32,7 @@ export default function Chat() {
   const uid = auth.currentUser?.uid;
 
   return (
-    <div className="flex flex-col min-h-screen bg-green-50">
+    <div className="flex flex-col min-h-screen bg-gradient-to-tr from-blue-50 to-green-100">
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((msg) => (
           <div
@@ -59,7 +59,7 @@ export default function Chat() {
         />
         <button
           type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
         >
           Send
         </button>
