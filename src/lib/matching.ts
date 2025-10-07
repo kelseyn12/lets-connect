@@ -18,6 +18,19 @@ import { auth } from "./firebase";
 
 const db = getFirestore();
 
+export async function cancelWaitingWord() {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+
+  const waitingRef = collection(db, "waitingWords");
+  const q = query(waitingRef, where("userId", "==", uid));
+  const snapshot = await getDocs(q);
+  for (const docSnap of snapshot.docs) {
+    await deleteDoc(docSnap.ref);
+  }
+  console.log("Removed waitingWords entry for", uid);
+}
+
 export async function matchWord(word: string) {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error("No user signed in");
