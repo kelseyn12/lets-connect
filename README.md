@@ -7,12 +7,11 @@ Type a word, and if someone else types the same one within a few minutes — you
 
 ## 🚀 Project Goals
 
-This is a learning and portfolio project built step-by-step to explore:
+This is a learning and portfolio project built to explore:
 - Realtime communication with **Firebase**
 - Simple matchmaking logic (word-based pairing)
 - Clean UI design with **React**, **Vite**, and **Tailwind CSS**
 - Modern TypeScript best practices
-- Friendly, maintainable codebase structure
 
 ---
 
@@ -26,15 +25,7 @@ This is a learning and portfolio project built step-by-step to explore:
 | Backend | Firebase (Auth + Firestore) |
 | Realtime | Firestore Subscriptions |
 | Build Tools | Vite, npm |
-| Hosting (later) | Firebase Hosting or Vercel |
-
----
-
-## 🧭 Current Phase
-
-- ✅ **Phase 1:** Project scaffold, Tailwind setup, routing  
-- 🚧 **Phase 2:** Firebase integration + anonymous login (next)  
-- ⏳ **Phase 3:** Matching logic + realtime chat  
+| Hosting | Firebase Hosting or Vercel |
 
 ---
 
