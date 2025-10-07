@@ -6,11 +6,13 @@ import {
   orderBy,
   limit,
   getDocs,
+  setDoc,
   addDoc,
   deleteDoc,
   serverTimestamp,
   runTransaction,
   Timestamp,
+  doc,
 } from "firebase/firestore";
 import { auth } from "./firebase";
 
@@ -20,20 +22,24 @@ export async function matchWord(word: string) {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error("No user signed in");
 
-
+  const waitingRef = collection(db, "waitingWords");
   const threeMinutesAgo = Timestamp.fromMillis(Date.now() - 3 * 60 * 1000);
 
-  // Step 0: Clean up old waiting entries
-  const waitingRef = collection(db, "waitingWords");
+  // 🧹 Step 0: Remove any old waiting docs for this user
+  const existingDocs = await getDocs(query(waitingRef, where("userId", "==", uid)));
+  for (const docSnap of existingDocs.docs) {
+    await deleteDoc(docSnap.ref);
+  }
+
+  // 🧹 Step 1: Delete waiting entries older than 3 min
   const oldQ = query(waitingRef, where("createdAt", "<", threeMinutesAgo));
   const oldDocs = await getDocs(oldQ);
   for (const docSnap of oldDocs.docs) {
     await deleteDoc(docSnap.ref);
   }
 
-  // Use a transaction to avoid race conditions
+  // 🧠 Step 2: Run transaction to find a match
   const result = await runTransaction(db, async () => {
-    // Step 1: Check if someone else is already waiting for this word
     const freshQ = query(
       waitingRef,
       where("word", "==", word),
@@ -43,40 +49,38 @@ export async function matchWord(word: string) {
     );
 
     const snapshot = await getDocs(freshQ);
+    const otherDoc = snapshot.docs.find((d) => d.data().userId !== uid);
 
-    if (!snapshot.empty) {
-      // Match found — create a chat room
-      const otherDoc = snapshot.docs[0];
+    if (otherDoc) {
       const otherData = otherDoc.data();
 
-      if (otherData.userId === uid) {
-        // You're already waiting — avoid self-match
-        return { matched: false };
-      }
-
+      // 🗣️ Create chat room
       const chatRoomRef = await addDoc(collection(db, "chatRooms"), {
         word,
         users: [uid, otherData.userId],
         createdAt: serverTimestamp(),
         active: true,
-        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000), // 10-min expiry
+        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
       });
 
-      // Remove the waiting record
+      // Clean up both waiting docs
       await deleteDoc(otherDoc.ref);
+      await deleteDoc(doc(waitingRef, uid)); // ensure self-clean
 
       return { matched: true, roomId: chatRoomRef.id };
-    } else {
-      // No match — add yourself to waitingWords
-      await addDoc(waitingRef, {
-        word,
-        userId: uid,
-        createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromMillis(Date.now() + 3 * 60 * 1000),
-      });
-      return { matched: false };
     }
+
+    // 👤 No match yet → add yourself
+    await setDoc(doc(waitingRef, uid), {
+      word,
+      userId: uid,
+      createdAt: serverTimestamp(),
+      expiresAt: Timestamp.fromMillis(Date.now() + 3 * 60 * 1000),
+    });
+
+    return { matched: false };
   });
 
   return result;
 }
+

@@ -1,38 +1,84 @@
 import { useEffect, useState, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { sendMessage, listenToMessages } from "../lib/chat";
-import { auth } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
+import { doc, updateDoc } from "firebase/firestore";
 
 export default function Chat() {
   const location = useLocation();
+  const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
   const roomId = params.get("roomId");
 
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const uid = auth.currentUser?.uid;
 
+  // 🔹 Listen for incoming messages
   useEffect(() => {
     if (!roomId) return;
     const unsubscribe = listenToMessages(roomId, setMessages);
     return () => unsubscribe();
   }, [roomId]);
 
+  // 🔹 Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 🔹 Handle sending message
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!roomId) return;
+    if (!roomId || !text.trim()) return;
     await sendMessage(roomId, text);
     setText("");
   }
 
-  const uid = auth.currentUser?.uid;
+  // 🔹 Leave handler
+  const handleLeave = async () => {
+    if (!roomId) {
+      navigate("/");
+      return;
+    }
+
+    try {
+      const roomRef = doc(db, "chatRooms", roomId);
+      await updateDoc(roomRef, { active: false });
+      console.log("👋 Room marked inactive");
+    } catch (err) {
+      console.error("Error marking room inactive:", err);
+    }
+
+    navigate("/");
+  };
+
+  // 🔹 Mark room inactive if user closes tab
+  useEffect(() => {
+    const handleUnload = async () => {
+      if (!roomId) return;
+      const roomRef = doc(db, "chatRooms", roomId);
+      await updateDoc(roomRef, { active: false });
+    };
+
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+  }, [roomId]);
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-tr from-blue-50 to-green-100">
+      {/* Header with Leave Button */}
+      <div className="flex justify-between items-center p-4 bg-white border-b">
+        <h1 className="text-lg font-semibold text-gray-800">Chat Room</h1>
+        <button
+          onClick={handleLeave}
+          className="bg-red-500 text-white px-3 py-1.5 rounded-md font-semibold hover:bg-red-600 transition-colors"
+        >
+          Leave
+        </button>
+      </div>
+
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((msg) => (
           <div
@@ -49,6 +95,7 @@ export default function Chat() {
         <div ref={bottomRef} />
       </div>
 
+      {/* Message Input */}
       <form onSubmit={handleSend} className="flex gap-2 p-4 bg-white border-t">
         <input
           type="text"
