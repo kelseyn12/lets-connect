@@ -6,7 +6,7 @@ admin.initializeApp();
 const db = admin.firestore();
 
 
-// 🔁 1️⃣ Real-time match finder (runs whenever someone joins `waitingWords`)
+//  Real-time match finder (runs whenever someone joins `waitingWords`)
 export const tryMatchOnJoin = functions.firestore.onDocumentCreated(
   "waitingWords/{userId}",
   async (event) => {
@@ -27,7 +27,7 @@ export const tryMatchOnJoin = functions.firestore.onDocumentCreated(
     // Exclude the current user
     const otherDocs = query.docs.filter((d) => d.id !== userId);
     if (otherDocs.length === 0) {
-      console.log(`🕐 No match yet for ${userId} (${word})`);
+      console.log(`No match yet for ${userId} (${word})`);
       return;
     }
 
@@ -40,13 +40,13 @@ export const tryMatchOnJoin = functions.firestore.onDocumentCreated(
     const confirmOther = await db.collection("waitingWords").doc(otherDoc.id).get();
 
     if (!selfDoc.exists || !confirmOther.exists) {
-      console.log(`⚠️ One of the waiting docs no longer exists`);
+      console.log(`One of the waiting docs no longer exists`);
       return;
     }
 
-    console.log(`✅ Match found: ${userId} ↔️ ${otherData.userId}`);
+    console.log(`Match found: ${userId} ↔️ ${otherData.userId}`);
 
-    // 🚫 Prevent reusing existing rooms for same users
+    // Prevent reusing existing rooms for same users
     const existingChats = await db
       .collection("chatRooms")
       .where("word", "==", word)
@@ -54,7 +54,7 @@ export const tryMatchOnJoin = functions.firestore.onDocumentCreated(
       .get();
 
     if (!existingChats.empty) {
-      console.log(`⚠️ Existing chat found — skipping duplicate room`);
+      console.log(`Existing chat found — skipping duplicate room`);
       await Promise.all([
         db.collection("waitingWords").doc(userId).delete(),
         db.collection("waitingWords").doc(otherDoc.id).delete(),
@@ -62,7 +62,7 @@ export const tryMatchOnJoin = functions.firestore.onDocumentCreated(
       return;
     }
 
-    // 💬 Create a brand-new chat room
+    // Create a brand-new chat room
     const chatRoomRef = await db.collection("chatRooms").add({
       word,
       users: [userId, otherData.userId],
@@ -79,7 +79,7 @@ export const tryMatchOnJoin = functions.firestore.onDocumentCreated(
       db.collection("waitingWords").doc(otherDoc.id).delete(),
     ]);
 
-    console.log(`💬 Chat room created: ${chatRoomRef.id}`);
+    console.log(`Chat room created: ${chatRoomRef.id}`);
   }
 );
 

@@ -25,20 +25,20 @@ export async function matchWord(word: string) {
   const waitingRef = collection(db, "waitingWords");
   const threeMinutesAgo = Timestamp.fromMillis(Date.now() - 3 * 60 * 1000);
 
-  // 🧹 Step 0: Remove any old waiting docs for this user
+  // Step 0: Remove any old waiting docs for this user
   const existingDocs = await getDocs(query(waitingRef, where("userId", "==", uid)));
   for (const docSnap of existingDocs.docs) {
     await deleteDoc(docSnap.ref);
   }
 
-  // 🧹 Step 1: Delete waiting entries older than 3 min
+  // Step 1: Delete waiting entries older than 3 min
   const oldQ = query(waitingRef, where("createdAt", "<", threeMinutesAgo));
   const oldDocs = await getDocs(oldQ);
   for (const docSnap of oldDocs.docs) {
     await deleteDoc(docSnap.ref);
   }
 
-  // 🧠 Step 2: Run transaction to find a match
+  // Step 2: Run transaction to find a match
   const result = await runTransaction(db, async () => {
     const freshQ = query(
       waitingRef,
@@ -54,7 +54,7 @@ export async function matchWord(word: string) {
     if (otherDoc) {
       const otherData = otherDoc.data();
 
-      // 🗣️ Create chat room
+      // Create chat room
       const chatRoomRef = await addDoc(collection(db, "chatRooms"), {
         word,
         users: [uid, otherData.userId],
@@ -70,7 +70,7 @@ export async function matchWord(word: string) {
       return { matched: true, roomId: chatRoomRef.id };
     }
 
-    // 👤 No match yet → add yourself
+    // No match yet → add yourself
     await setDoc(doc(waitingRef, uid), {
       word,
       userId: uid,
