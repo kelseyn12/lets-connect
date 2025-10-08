@@ -20,19 +20,37 @@ export default function Chat() {
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState("");
   const [roomActive, setRoomActive] = useState(true);
-  const [isOtherTyping, setIsOtherTyping] = useState(false); 
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const uid = auth.currentUser?.uid;
 
-  //  Listen for incoming messages
+  // Listen for incoming messages
   useEffect(() => {
     if (!roomId) return;
     const unsubscribe = listenToMessages(roomId, setMessages);
     return () => unsubscribe();
   }, [roomId]);
 
-  // Listen for room becoming inactive (the other user left)
+  // Mark messages as seen when user views them
+  useEffect(() => {
+    if (!roomId || !uid || messages.length === 0) return;
+
+    const unseen = messages.filter(
+      (m) => m.senderId !== uid && (!m.seenBy || !m.seenBy.includes(uid))
+    );
+    if (unseen.length === 0) return;
+
+    (async () => {
+      const updates = unseen.map(async (m) => {
+        const msgRef = doc(db, "chatRooms", roomId, "messages", m.id);
+        await updateDoc(msgRef, { seenBy: [...(m.seenBy || []), uid] });
+      });
+      await Promise.all(updates);
+    })();
+  }, [messages, roomId, uid]);
+
+  // Listen for room becoming inactive or typing changes
   useEffect(() => {
     if (!roomId) return;
 
@@ -41,7 +59,7 @@ export default function Chat() {
       if (!docSnap.exists()) return;
       const data = docSnap.data();
 
-      // Someone left the room
+      // Someone left
       if (data?.active === false) {
         setRoomActive(false);
         setMessages((prev) => {
@@ -58,7 +76,7 @@ export default function Chat() {
         });
       }
 
-      // 👇 Detect if the other user is typing
+      // Typing status
       if (data?.typing && data.typing !== uid) {
         setIsOtherTyping(true);
       } else {
@@ -69,19 +87,19 @@ export default function Chat() {
     return () => unsubscribe();
   }, [roomId, uid]);
 
-  // Auto-scroll to bottom
+  //  Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isOtherTyping]);
 
-  //  Handle sending message
+  // Handle sending messages
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!roomId || !text.trim() || !roomActive) return;
     await sendMessage(roomId, text);
     setText("");
 
-    // Reset typing status after send
+    // Reset typing status
     const roomRef = doc(db, "chatRooms", roomId);
     await updateDoc(roomRef, { typing: null });
   }
@@ -95,11 +113,9 @@ export default function Chat() {
 
     try {
       const roomRef = doc(db, "chatRooms", roomId);
-
-      // Mark room inactive
       await updateDoc(roomRef, { active: false });
 
-      // Add system message for the other user
+      // System message for the other user
       await addDoc(collection(roomRef, "messages"), {
         text: "The other user has left the chat 👋",
         senderId: "system",
@@ -114,7 +130,7 @@ export default function Chat() {
     navigate("/");
   };
 
-  // Mark room inactive if user closes tab
+  //  Mark room inactive if user closes tab
   useEffect(() => {
     const handleUnload = async () => {
       if (!roomId) return;
@@ -126,7 +142,7 @@ export default function Chat() {
     return () => window.removeEventListener("beforeunload", handleUnload);
   }, [roomId]);
 
-  // Handle typing updates
+  //  Handle typing updates
   const handleTyping = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newText = e.target.value;
     setText(newText);
@@ -137,7 +153,7 @@ export default function Chat() {
     // Mark user as typing
     await updateDoc(roomRef, { typing: uid });
 
-    // Reset typing state after 1.5 seconds of inactivity
+    // Reset typing state after 1.5s of inactivity
     if (typingTimeout.current) clearTimeout(typingTimeout.current);
     typingTimeout.current = setTimeout(async () => {
       await updateDoc(roomRef, { typing: null });
@@ -160,21 +176,29 @@ export default function Chat() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`max-w-xs px-3 py-2 rounded-lg ${
-              msg.senderId === "system"
-                ? "mx-auto bg-gray-200 text-gray-600 italic text-center"
-                : msg.senderId === uid
-                ? "ml-auto bg-blue-500 text-white"
-                : "mr-auto bg-gray-200 text-gray-800"
-            }`}
-          >
-            {msg.text}
+          <div key={msg.id}>
+            <div
+              className={`max-w-xs px-3 py-2 rounded-lg ${
+                msg.senderId === "system"
+                  ? "mx-auto bg-gray-200 text-gray-600 italic text-center"
+                  : msg.senderId === uid
+                  ? "ml-auto bg-blue-500 text-white"
+                  : "mr-auto bg-gray-200 text-gray-800"
+              }`}
+            >
+              {msg.text}
+            </div>
+
+            {/* Read receipt indicator */}
+            {msg.senderId === uid && msg.seenBy?.length > 1 && (
+              <div className="text-xs text-gray-400 text-right mt-1 mr-2">
+                Seen ✅
+              </div>
+            )}
           </div>
         ))}
 
-        {/*  Typing Indicator */}
+        {/* Typing Indicator */}
         {isOtherTyping && (
           <div className="text-sm italic text-gray-500 animate-pulse ml-2">
             The other user is typing...
@@ -184,12 +208,12 @@ export default function Chat() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Message Input */}
+      {/* Input */}
       <form onSubmit={handleSend} className="flex gap-2 p-4 bg-white border-t">
         <input
           type="text"
           value={text}
-          onChange={handleTyping} // 👈 new handler
+          onChange={handleTyping}
           placeholder={
             roomActive ? "Say hi..." : "The other user has left the chat 👋"
           }

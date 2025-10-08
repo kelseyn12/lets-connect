@@ -1,3 +1,4 @@
+// lib/chat.ts
 import {
   collection,
   addDoc,
@@ -20,12 +21,11 @@ export async function sendMessage(roomId: string, text: string) {
     senderId: user.uid,
     text: text.trim(),
     createdAt: serverTimestamp(),
+    seenBy: [user.uid], // mark sender as having seen their own message
   });
-    
-    console.log("Message sent to:", roomId, text);
+
+  console.log("Message sent to:", roomId, text);
 }
-
-
 
 // Subscribe to live message updates
 export function listenToMessages(roomId: string, callback: (messages: any[]) => void) {
