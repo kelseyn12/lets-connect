@@ -17,33 +17,49 @@ export default function Connecting() {
   ];
 
   // cycle through status messages
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setMessageIndex((prev) => (prev + 1) % statusMessages.length);
-    }, 2500); // every 2.5 seconds
-    return () => clearInterval(interval);
-  }, []);
-
-  // word + snapshot listener
+useEffect(() => {
+  // ✅ 1. get word safely from the URL
   const params = new URLSearchParams(location.search);
   const word = params.get("word");
 
-  useEffect(() => {
-    if (!word || !auth.currentUser) return;
+  if (!word || !auth.currentUser) return;
 
-    const uid = auth.currentUser.uid;
-    const chatRoomsRef = collection(db, "chatRooms");
-    const q = query(chatRoomsRef, where("users", "array-contains", uid));
+  const uid = auth.currentUser.uid;
+  const chatRoomsRef = collection(db, "chatRooms");
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const room = snapshot.docs[0];
+  // 🟡 optional (not used yet, but keeping it if you plan time filtering)
+  // const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+
+  const q = query(
+    chatRoomsRef,
+    where("users", "array-contains", uid),
+    where("word", "==", word),
+    where("active", "==", true)
+  );
+
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    if (!snapshot.empty) {
+      // Pick the most recent active room
+      const rooms = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      }));
+
+      const sorted = rooms.sort((a, b) => {
+        const aTime = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const bTime = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return bTime - aTime;
+      });
+
+      const room = sorted[0];
+      if (room) {
         navigate(`/chat?roomId=${room.id}&word=${word}`);
       }
-    });
+    }
+  });
 
-    return () => unsubscribe();
-  }, [word, navigate]);
+  return () => unsubscribe();
+}, [location, navigate]);
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-blue-100 to-purple-200">
