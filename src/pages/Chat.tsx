@@ -47,23 +47,37 @@ export default function Chat() {
     return () => unsubscribe();
   }, [roomId]);
 
-  // Mark messages as seen when user views them
-  useEffect(() => {
-    if (!roomId || !uid || messages.length === 0) return;
+// ✅ Mark messages as seen only when user is actually viewing the chat
+useEffect(() => {
+  if (!roomId || !uid || messages.length === 0) return;
+
+  const markSeen = async () => {
+    // Only mark as seen if the tab is visible AND focused
+    if (document.visibilityState !== "visible" || !document.hasFocus()) return;
 
     const unseen = messages.filter(
       (m) => m.senderId !== uid && (!m.seenBy || !m.seenBy.includes(uid))
     );
     if (unseen.length === 0) return;
 
-    (async () => {
-      const updates = unseen.map(async (m) => {
-        const msgRef = doc(db, "chatRooms", roomId, "messages", m.id);
-        await updateDoc(msgRef, { seenBy: [...(m.seenBy || []), uid] });
-      });
-      await Promise.all(updates);
-    })();
-  }, [messages, roomId, uid]);
+    const updates = unseen.map(async (m) => {
+      const msgRef = doc(db, "chatRooms", roomId, "messages", m.id);
+      await updateDoc(msgRef, { seenBy: [...(m.seenBy || []), uid] });
+    });
+    await Promise.all(updates);
+  };
+
+  // Run immediately if visible
+  markSeen();
+
+  // Re-check when window/tab regains focus
+  window.addEventListener("focus", markSeen);
+
+  return () => {
+    window.removeEventListener("focus", markSeen);
+  };
+}, [messages, roomId, uid]);
+
 
   // Listen for room becoming inactive or typing changes
   useEffect(() => {
