@@ -21,9 +21,24 @@ export default function Chat() {
   const [text, setText] = useState("");
   const [roomActive, setRoomActive] = useState(true);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [otherUserId, setOtherUserId] = useState<string | null>(null); // 👈 NEW
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const uid = auth.currentUser?.uid;
+
+  // Identify the other user in this chat room
+  useEffect(() => {
+    if (!roomId || !uid) return;
+    const roomRef = doc(db, "chatRooms", roomId);
+    const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const otherId = data?.users?.find((u: string) => u !== uid) || null;
+        setOtherUserId(otherId);
+      }
+    });
+    return () => unsubscribe();
+  }, [roomId, uid]);
 
   // Listen for incoming messages
   useEffect(() => {
@@ -172,7 +187,6 @@ export default function Chat() {
         >
           Leave
         </button>
-
       </div>
 
       {/* Messages */}
@@ -180,22 +194,25 @@ export default function Chat() {
         {messages.map((msg) => (
           <div key={msg.id}>
             <div
-              className={`max-w-xs px-3 py-2 rounded-lg ${msg.senderId === "system"
-                ? "mx-auto bg-gray-200 text-gray-600 italic text-center"
-                : msg.senderId === uid
+              className={`max-w-xs px-3 py-2 rounded-lg ${
+                msg.senderId === "system"
+                  ? "mx-auto bg-gray-200 text-gray-600 italic text-center"
+                  : msg.senderId === uid
                   ? "ml-auto bg-blue-500 text-white"
                   : "mr-auto bg-gray-200 text-gray-800"
-                }`}
+              }`}
             >
               {msg.text}
             </div>
 
-            {/* Read receipt indicator */}
-            {msg.senderId === uid && msg.seenBy?.length > 1 && (
-              <div className="text-xs text-gray-400 text-right mt-1 mr-2">
-                Seen ✅
-              </div>
-            )}
+            {/* ✅ Seen indicator: only if other user has seen */}
+            {msg.senderId === uid &&
+              otherUserId &&
+              msg.seenBy?.includes(otherUserId) && (
+                <div className="text-xs text-gray-400 text-right mt-1 mr-2">
+                  Seen ✅
+                </div>
+              )}
           </div>
         ))}
 
