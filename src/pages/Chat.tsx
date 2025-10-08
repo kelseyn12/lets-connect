@@ -19,11 +19,13 @@ export default function Chat() {
 
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState("");
-  const [roomActive, setRoomActive] = useState(true); // 👈 track room status
+  const [roomActive, setRoomActive] = useState(true);
+  const [isOtherTyping, setIsOtherTyping] = useState(false); 
+  const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const uid = auth.currentUser?.uid;
 
-  // Listen for incoming messages
+  //  Listen for incoming messages
   useEffect(() => {
     if (!roomId) return;
     const unsubscribe = listenToMessages(roomId, setMessages);
@@ -38,10 +40,10 @@ export default function Chat() {
     const unsubscribe = onSnapshot(roomRef, (docSnap) => {
       if (!docSnap.exists()) return;
       const data = docSnap.data();
+
+      // Someone left the room
       if (data?.active === false) {
         setRoomActive(false);
-
-        // Add a system message if not already in messages
         setMessages((prev) => {
           const alreadyShown = prev.some((m) => m.id === "system-left");
           if (alreadyShown) return prev;
@@ -55,22 +57,33 @@ export default function Chat() {
           ];
         });
       }
+
+      // 👇 Detect if the other user is typing
+      if (data?.typing && data.typing !== uid) {
+        setIsOtherTyping(true);
+      } else {
+        setIsOtherTyping(false);
+      }
     });
 
     return () => unsubscribe();
-  }, [roomId]);
+  }, [roomId, uid]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isOtherTyping]);
 
   //  Handle sending message
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!roomId || !text.trim() || !roomActive) return; // 👈 prevent sending in inactive room
+    if (!roomId || !text.trim() || !roomActive) return;
     await sendMessage(roomId, text);
     setText("");
+
+    // Reset typing status after send
+    const roomRef = doc(db, "chatRooms", roomId);
+    await updateDoc(roomRef, { typing: null });
   }
 
   // Leave handler
@@ -101,7 +114,7 @@ export default function Chat() {
     navigate("/");
   };
 
-  //  Mark room inactive if user closes tab
+  // Mark room inactive if user closes tab
   useEffect(() => {
     const handleUnload = async () => {
       if (!roomId) return;
@@ -112,6 +125,24 @@ export default function Chat() {
     window.addEventListener("beforeunload", handleUnload);
     return () => window.removeEventListener("beforeunload", handleUnload);
   }, [roomId]);
+
+  // Handle typing updates
+  const handleTyping = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newText = e.target.value;
+    setText(newText);
+
+    if (!roomId || !uid) return;
+    const roomRef = doc(db, "chatRooms", roomId);
+
+    // Mark user as typing
+    await updateDoc(roomRef, { typing: uid });
+
+    // Reset typing state after 1.5 seconds of inactivity
+    if (typingTimeout.current) clearTimeout(typingTimeout.current);
+    typingTimeout.current = setTimeout(async () => {
+      await updateDoc(roomRef, { typing: null });
+    }, 1500);
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-tr from-blue-50 to-green-100">
@@ -142,18 +173,23 @@ export default function Chat() {
             {msg.text}
           </div>
         ))}
+
+        {/*  Typing Indicator */}
+        {isOtherTyping && (
+          <div className="text-sm italic text-gray-500 animate-pulse ml-2">
+            The other user is typing...
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
 
       {/* Message Input */}
-      <form
-        onSubmit={handleSend}
-        className="flex gap-2 p-4 bg-white border-t"
-      >
+      <form onSubmit={handleSend} className="flex gap-2 p-4 bg-white border-t">
         <input
           type="text"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={handleTyping} // 👈 new handler
           placeholder={
             roomActive ? "Say hi..." : "The other user has left the chat 👋"
           }
