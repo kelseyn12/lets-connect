@@ -168,7 +168,7 @@ export default function Chat() {
         {/* Floating Leave Button */}
         <button
           onClick={handleLeave}
-          className="fixed bottom-5 right-5 bg-red-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-red-600 transition-transform transform hover:scale-105"
+          className="fixed bottom-20 right-5 bg-red-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-red-600 opacity-80 hover:opacity-100 transition-all transform hover:scale-105 z-50"
         >
           Leave
         </button>
@@ -181,10 +181,10 @@ export default function Chat() {
           <div key={msg.id}>
             <div
               className={`max-w-xs px-3 py-2 rounded-lg ${msg.senderId === "system"
-                  ? "mx-auto bg-gray-200 text-gray-600 italic text-center"
-                  : msg.senderId === uid
-                    ? "ml-auto bg-blue-500 text-white"
-                    : "mr-auto bg-gray-200 text-gray-800"
+                ? "mx-auto bg-gray-200 text-gray-600 italic text-center"
+                : msg.senderId === uid
+                  ? "ml-auto bg-blue-500 text-white"
+                  : "mr-auto bg-gray-200 text-gray-800"
                 }`}
             >
               {msg.text}
