@@ -165,12 +165,14 @@ export default function Chat() {
       {/* Header */}
       <div className="flex justify-between items-center p-4 bg-white border-b">
         <h1 className="text-lg font-semibold text-gray-800">Chat Room</h1>
+        {/* Floating Leave Button */}
         <button
           onClick={handleLeave}
-          className="bg-red-500 text-white px-3 py-1.5 rounded-md font-semibold hover:bg-red-600 transition-colors"
+          className="fixed bottom-5 right-5 bg-red-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-red-600 transition-transform transform hover:scale-105"
         >
           Leave
         </button>
+
       </div>
 
       {/* Messages */}
@@ -178,13 +180,12 @@ export default function Chat() {
         {messages.map((msg) => (
           <div key={msg.id}>
             <div
-              className={`max-w-xs px-3 py-2 rounded-lg ${
-                msg.senderId === "system"
+              className={`max-w-xs px-3 py-2 rounded-lg ${msg.senderId === "system"
                   ? "mx-auto bg-gray-200 text-gray-600 italic text-center"
                   : msg.senderId === uid
-                  ? "ml-auto bg-blue-500 text-white"
-                  : "mr-auto bg-gray-200 text-gray-800"
-              }`}
+                    ? "ml-auto bg-blue-500 text-white"
+                    : "mr-auto bg-gray-200 text-gray-800"
+                }`}
             >
               {msg.text}
             </div>
