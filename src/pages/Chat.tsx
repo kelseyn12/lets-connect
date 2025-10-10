@@ -21,7 +21,8 @@ export default function Chat() {
   const [text, setText] = useState("");
   const [roomActive, setRoomActive] = useState(true);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
-  const [otherUserId, setOtherUserId] = useState<string | null>(null); // 👈 NEW
+  const [otherUserId, setOtherUserId] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null); // ⏳ for countdown display
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const uid = auth.currentUser?.uid;
@@ -47,37 +48,29 @@ export default function Chat() {
     return () => unsubscribe();
   }, [roomId]);
 
-// ✅ Mark messages as seen only when user is actually viewing the chat
-useEffect(() => {
-  if (!roomId || !uid || messages.length === 0) return;
+  // ✅ Mark messages as seen only when user is actually viewing the chat
+  useEffect(() => {
+    if (!roomId || !uid || messages.length === 0) return;
 
-  const markSeen = async () => {
-    // Only mark as seen if the tab is visible AND focused
-    if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+    const markSeen = async () => {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return;
 
-    const unseen = messages.filter(
-      (m) => m.senderId !== uid && (!m.seenBy || !m.seenBy.includes(uid))
-    );
-    if (unseen.length === 0) return;
+      const unseen = messages.filter(
+        (m) => m.senderId !== uid && (!m.seenBy || !m.seenBy.includes(uid))
+      );
+      if (unseen.length === 0) return;
 
-    const updates = unseen.map(async (m) => {
-      const msgRef = doc(db, "chatRooms", roomId, "messages", m.id);
-      await updateDoc(msgRef, { seenBy: [...(m.seenBy || []), uid] });
-    });
-    await Promise.all(updates);
-  };
+      const updates = unseen.map(async (m) => {
+        const msgRef = doc(db, "chatRooms", roomId, "messages", m.id);
+        await updateDoc(msgRef, { seenBy: [...(m.seenBy || []), uid] });
+      });
+      await Promise.all(updates);
+    };
 
-  // Run immediately if visible
-  markSeen();
-
-  // Re-check when window/tab regains focus
-  window.addEventListener("focus", markSeen);
-
-  return () => {
-    window.removeEventListener("focus", markSeen);
-  };
-}, [messages, roomId, uid]);
-
+    markSeen();
+    window.addEventListener("focus", markSeen);
+    return () => window.removeEventListener("focus", markSeen);
+  }, [messages, roomId, uid]);
 
   // Listen for room becoming inactive or typing changes
   useEffect(() => {
@@ -88,7 +81,6 @@ useEffect(() => {
       if (!docSnap.exists()) return;
       const data = docSnap.data();
 
-      // Someone left
       if (data?.active === false) {
         setRoomActive(false);
         setMessages((prev) => {
@@ -105,7 +97,6 @@ useEffect(() => {
         });
       }
 
-      // Typing status
       if (data?.typing && data.typing !== uid) {
         setIsOtherTyping(true);
       } else {
@@ -116,7 +107,7 @@ useEffect(() => {
     return () => unsubscribe();
   }, [roomId, uid]);
 
-  //  Auto-scroll to bottom
+  // Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isOtherTyping]);
@@ -128,7 +119,6 @@ useEffect(() => {
     await sendMessage(roomId, text);
     setText("");
 
-    // Reset typing status
     const roomRef = doc(db, "chatRooms", roomId);
     await updateDoc(roomRef, { typing: null });
   }
@@ -143,14 +133,11 @@ useEffect(() => {
     try {
       const roomRef = doc(db, "chatRooms", roomId);
       await updateDoc(roomRef, { active: false });
-
-      // System message for the other user
       await addDoc(collection(roomRef, "messages"), {
         text: "The other user has left the chat 👋",
         senderId: "system",
         createdAt: serverTimestamp(),
       });
-
       console.log("👋 Room marked inactive");
     } catch (err) {
       console.error("Error marking room inactive:", err);
@@ -159,7 +146,7 @@ useEffect(() => {
     navigate("/");
   };
 
-  //  Mark room inactive if user closes tab
+  // Mark room inactive if user closes tab
   useEffect(() => {
     const handleUnload = async () => {
       if (!roomId) return;
@@ -171,30 +158,75 @@ useEffect(() => {
     return () => window.removeEventListener("beforeunload", handleUnload);
   }, [roomId]);
 
-  //  Handle typing updates
+  // Handle typing updates
   const handleTyping = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newText = e.target.value;
     setText(newText);
 
     if (!roomId || !uid) return;
     const roomRef = doc(db, "chatRooms", roomId);
-
-    // Mark user as typing
     await updateDoc(roomRef, { typing: uid });
 
-    // Reset typing state after 1.5s of inactivity
     if (typingTimeout.current) clearTimeout(typingTimeout.current);
     typingTimeout.current = setTimeout(async () => {
       await updateDoc(roomRef, { typing: null });
     }, 1500);
   };
 
+  // Auto-end chat after inactivity + show countdown
+  useEffect(() => {
+    if (!roomId || !roomActive) return;
+
+    let inactivityTimer: ReturnType<typeof setTimeout>;
+    let countdownTimer: ReturnType<typeof setInterval>;
+    const totalTimeout = 10 * 60 * 1000; // 10 minutes
+    const countdownStart = 30; // seconds remaining to show warning
+
+    const startTimer = () => {
+      clearTimeout(inactivityTimer);
+      clearInterval(countdownTimer);
+      setTimeLeft(null);
+
+      inactivityTimer = setTimeout(async () => {
+        const roomRef = doc(db, "chatRooms", roomId);
+        await updateDoc(roomRef, { active: false });
+        setRoomActive(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: "system-timeout",
+            text: "Chat ended due to inactivity ⏰",
+            senderId: "system",
+          },
+        ]);
+      }, totalTimeout);
+
+      // Start 30-second countdown before timeout
+      setTimeout(() => {
+        let seconds = countdownStart;
+        setTimeLeft(seconds);
+        countdownTimer = setInterval(() => {
+          seconds -= 1;
+          setTimeLeft(seconds);
+          if (seconds <= 0) {
+            clearInterval(countdownTimer);
+          }
+        }, 1000);
+      }, totalTimeout - countdownStart * 1000);
+    };
+
+    startTimer();
+    return () => {
+      clearTimeout(inactivityTimer);
+      clearInterval(countdownTimer);
+    };
+  }, [messages, isOtherTyping, roomId, roomActive]);
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-tr from-blue-50 to-green-100">
       {/* Header */}
       <div className="flex justify-between items-center p-4 bg-white border-b">
         <h1 className="text-lg font-semibold text-gray-800">Chat Room</h1>
-        {/* Floating Leave Button */}
         <button
           onClick={handleLeave}
           className="fixed bottom-20 right-5 bg-red-500 text-white px-4 py-2 rounded-full shadow-lg hover:bg-red-600 opacity-80 hover:opacity-100 transition-all transform hover:scale-105 z-50"
@@ -219,7 +251,7 @@ useEffect(() => {
               {msg.text}
             </div>
 
-            {/* ✅ Seen indicator: only if other user has seen */}
+            {/* ✅ Seen indicator */}
             {msg.senderId === uid &&
               otherUserId &&
               msg.seenBy?.includes(otherUserId) && (
@@ -230,10 +262,17 @@ useEffect(() => {
           </div>
         ))}
 
-        {/* Typing Indicator */}
+        {/* Typing indicator */}
         {isOtherTyping && (
           <div className="text-sm italic text-gray-500 animate-pulse ml-2">
             The other user is typing...
+          </div>
+        )}
+
+        {/*  Countdown warning */}
+        {timeLeft !== null && timeLeft > 0 && (
+          <div className="text-sm text-center text-red-500 font-medium mt-4 animate-pulse">
+            Chat will end in {timeLeft}s due to inactivity ⏰
           </div>
         )}
 

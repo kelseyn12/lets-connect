@@ -21,26 +21,27 @@ export default function Connecting() {
     "Patience, the cosmos is aligning...",
   ];
 
-  //  Cycle through messages and timeout after 15s
+  // 🌀 Cycle through messages every few seconds
   useEffect(() => {
     const messageInterval = setInterval(() => {
       setMessageIndex((prev) => (prev + 1) % statusMessages.length);
-      setStatusMessage(statusMessages[messageIndex]);
     }, 4000);
 
+    return () => clearInterval(messageInterval);
+  }, []);
+
+  // 🕒 Timeout after 30 seconds if no match
+  useEffect(() => {
     const timeout = setTimeout(() => {
-      clearInterval(messageInterval);
       setHasTimedOut(true);
       setStatusMessage("No match found — try again 💭");
-    }, 15000);
+      cancelWaitingWord(); // optional cleanup
+    }, 30000); // 30 seconds
 
-    return () => {
-      clearInterval(messageInterval);
-      clearTimeout(timeout);
-    };
-  }, [messageIndex]);
+    return () => clearTimeout(timeout);
+  }, []);
 
-  //  Firestore listener to detect room match
+  // 💬 Watch for room match in Firestore
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const word = params.get("word");
@@ -79,6 +80,11 @@ export default function Connecting() {
 
     return () => unsubscribe();
   }, [location, navigate]);
+
+  // ✨ Update displayed message when index changes
+  useEffect(() => {
+    setStatusMessage(statusMessages[messageIndex]);
+  }, [messageIndex]);
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-blue-100 to-purple-200 text-gray-800">
