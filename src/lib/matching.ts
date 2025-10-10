@@ -88,7 +88,7 @@ export async function matchWord(word: string) {
       word,
       userId: uid,
       createdAt: serverTimestamp(),
-      expiresAt: Timestamp.fromMillis(Date.now() + 3 * 60 * 1000),
+      expiresAt: Timestamp.fromMillis(Date.now() + 3600 * 1000),
     });
 
     return { matched: false };

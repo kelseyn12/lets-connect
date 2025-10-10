@@ -3,6 +3,7 @@ import {
   collection,
   addDoc,
   serverTimestamp,
+  Timestamp,
   query,
   orderBy,
   onSnapshot,
@@ -21,6 +22,7 @@ export async function sendMessage(roomId: string, text: string) {
     senderId: user.uid,
     text: text.trim(),
     createdAt: serverTimestamp(),
+    expiresAt: Timestamp.fromMillis(Date.now() + 60 * 60 * 1000),
     seenBy: [user.uid], // mark sender as having seen their own message
   });
 
