@@ -173,54 +173,68 @@ export default function Chat() {
     }, 1500);
   };
 
-  // Auto-end chat after inactivity + show countdown
-  useEffect(() => {
-    if (!roomId || !roomActive) return;
+//  Auto-end chat after inactivity + show countdown
+useEffect(() => {
+  if (!roomId || !roomActive) return;
 
-    let inactivityTimer: ReturnType<typeof setTimeout>;
-    let countdownTimer: ReturnType<typeof setInterval>;
-    const totalTimeout = 10 * 60 * 1000; // 10 minutes
-    const countdownStart = 30; // seconds remaining to show warning
+  let inactivityTimer: ReturnType<typeof setTimeout>;
+  let countdownTimer: ReturnType<typeof setInterval>;
+  const totalTimeout = 10 * 60 * 1000; // 10 minutes
+  const countdownStart = 30; // seconds remaining to show warning
 
-    const startTimer = () => {
-      clearTimeout(inactivityTimer);
-      clearInterval(countdownTimer);
-      setTimeLeft(null);
+  const startTimer = () => {
+    clearTimeout(inactivityTimer);
+    clearInterval(countdownTimer);
+    setTimeLeft(null);
 
-      inactivityTimer = setTimeout(async () => {
-        const roomRef = doc(db, "chatRooms", roomId);
-        await updateDoc(roomRef, { active: false });
-        setRoomActive(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: "system-timeout",
-            text: "Chat ended due to inactivity ⏰",
-            senderId: "system",
-          },
-        ]);
-      }, totalTimeout);
+    inactivityTimer = setTimeout(async () => {
+      const roomRef = doc(db, "chatRooms", roomId);
+      await updateDoc(roomRef, { active: false });
+      setRoomActive(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: "system-timeout",
+          text: "Chat ended due to inactivity ⏰",
+          senderId: "system",
+        },
+      ]);
+    }, totalTimeout);
 
-      // Start 30-second countdown before timeout
-      setTimeout(() => {
-        let seconds = countdownStart;
+    // Start 30-second countdown before timeout
+    const countdownDelay = totalTimeout - countdownStart * 1000;
+    setTimeout(() => {
+      let seconds = countdownStart;
+      setTimeLeft(seconds);
+      countdownTimer = setInterval(() => {
+        seconds -= 1;
         setTimeLeft(seconds);
-        countdownTimer = setInterval(() => {
-          seconds -= 1;
-          setTimeLeft(seconds);
-          if (seconds <= 0) {
-            clearInterval(countdownTimer);
-          }
-        }, 1000);
-      }, totalTimeout - countdownStart * 1000);
-    };
+        if (seconds <= 0) {
+          clearInterval(countdownTimer);
+        }
+      }, 1000);
+    }, countdownDelay);
+  };
 
-    startTimer();
-    return () => {
-      clearTimeout(inactivityTimer);
-      clearInterval(countdownTimer);
-    };
-  }, [messages, isOtherTyping, roomId, roomActive]);
+  // Start initial timer
+  startTimer();
+
+  // Reset timer on user activity
+  const resetOnActivity = () => startTimer();
+
+  window.addEventListener("keydown", resetOnActivity);
+  window.addEventListener("click", resetOnActivity);
+  window.addEventListener("mousemove", resetOnActivity);
+
+  return () => {
+    clearTimeout(inactivityTimer);
+    clearInterval(countdownTimer);
+    window.removeEventListener("keydown", resetOnActivity);
+    window.removeEventListener("click", resetOnActivity);
+    window.removeEventListener("mousemove", resetOnActivity);
+  };
+}, [roomId, roomActive]);
+
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-tr from-blue-50 to-green-100">
