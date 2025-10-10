@@ -61,7 +61,12 @@ export default function Home() {
       <p className="mt-10 text-sm text-slate-500 text-center max-w-md">
         Type the same word as someone else and you’ll be instantly connected in a chat room.
       </p>
+      <footer className="text-xs text-gray-500 mt-6 text-center">
+        Built by Kelsey Nocek • <a href="/privacy" className="underline">Privacy</a>
+      </footer>
+
     </div>
+
   );
 }
 
