@@ -122,3 +122,36 @@ export const cleanupOldEntries = onSchedule(
     console.log("🧹 Cleanup completed at", new Date().toISOString());
   }
 );
+
+
+// 🚦 3️⃣ Rate limit message spam per user per room
+export const rateLimitMessages = functions.firestore.onDocumentCreated(
+  "chatRooms/{roomId}/messages/{messageId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const { roomId } = event.params;
+    const data = snap.data();
+    const senderId = data?.senderId;
+    if (!senderId) return;
+
+    const messagesRef = db.collection(`chatRooms/${roomId}/messages`);
+    const recentMessages = await messagesRef
+      .where("senderId", "==", senderId)
+      .orderBy("createdAt", "desc")
+      .limit(6)
+      .get();
+
+    const now = Date.now();
+    const timestamps = recentMessages.docs
+      .map((d) => d.data()?.createdAt?.toMillis?.() || 0)
+      .filter((t) => now - t < 10_000); // last 10 seconds
+
+    if (timestamps.length > 5) {
+      console.warn(`🚫 Rate-limit triggered by ${senderId} in ${roomId}`);
+      await snap.ref.delete();
+    }
+  }
+);
+

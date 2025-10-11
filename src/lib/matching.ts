@@ -39,7 +39,9 @@ export async function matchWord(word: string) {
   const threeMinutesAgo = Timestamp.fromMillis(Date.now() - 3 * 60 * 1000);
 
   // Step 0: Remove any old waiting docs for this user
-  const existingDocs = await getDocs(query(waitingRef, where("userId", "==", uid)));
+  const existingDocs = await getDocs(
+    query(waitingRef, where("userId", "==", uid))
+  );
   for (const docSnap of existingDocs.docs) {
     await deleteDoc(docSnap.ref);
   }
@@ -76,9 +78,8 @@ export async function matchWord(word: string) {
         expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
       });
 
-      // Clean up both waiting docs
+      // Clean up matched user’s waiting doc
       await deleteDoc(otherDoc.ref);
-      await deleteDoc(doc(waitingRef, uid)); // ensure self-clean
 
       return { matched: true, roomId: chatRoomRef.id };
     }
@@ -96,4 +97,3 @@ export async function matchWord(word: string) {
 
   return result;
 }
-
