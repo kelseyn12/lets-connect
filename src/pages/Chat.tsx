@@ -128,15 +128,30 @@ export default function Chat() {
   };
 
   // Handle sending messages
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    if (!roomId || !text.trim() || !roomActive) return;
-    await sendMessage(roomId, text);
-    setText("");
+  // Track last sent timestamp outside the function
+let lastSentAt = 0;
 
-    const roomRef = doc(db, "chatRooms", roomId);
-    await updateDoc(roomRef, { typing: null });
+async function handleSend(e: React.FormEvent) {
+  e.preventDefault();
+
+  const now = Date.now();
+  const minInterval = 1000; // 1 message per second
+
+  if (now - lastSentAt < minInterval) {
+    console.warn("⏳ Too fast! Please wait a moment.");
+    return;
   }
+  lastSentAt = now;
+
+  if (!roomId || !text.trim() || !roomActive) return;
+
+  await sendMessage(roomId, text);
+  setText("");
+
+  const roomRef = doc(db, "chatRooms", roomId);
+  await updateDoc(roomRef, { typing: null });
+}
+
 
   // Leave handler
   const handleLeave = async () => {
