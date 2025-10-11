@@ -6,10 +6,9 @@ import {
   orderBy,
   limit,
   getDocs,
-  setDoc,
-  addDoc,
   deleteDoc,
   serverTimestamp,
+  runTransaction,
   Timestamp,
   doc,
 } from "firebase/firestore";
@@ -32,7 +31,7 @@ export async function cancelWaitingWord() {
   }
 }
 
-// 🤝 Match or wait for a user with the same word
+// 🤝 Match or wait for a user with the same word (atomic + safe)
 export async function matchWord(word: string) {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error("No user signed in");
@@ -41,53 +40,63 @@ export async function matchWord(word: string) {
   const userDocRef = doc(waitingRef, uid);
   const threeMinutesAgo = Timestamp.fromMillis(Date.now() - 3 * 60 * 1000);
 
-  // 🧹 Step 0: Clean up this user's old doc (direct access, no query)
+  // 🧹 Step 0: Clean up this user's old doc (direct access)
   await deleteDoc(userDocRef).catch(() => {});
 
-  // 🧹 Step 1: Delete entries older than 3 min (optional global cleanup)
-  const oldQ = query(waitingRef, where("createdAt", "<", threeMinutesAgo));
-  const oldDocs = await getDocs(oldQ);
-  for (const old of oldDocs.docs) {
-    await deleteDoc(old.ref);
-  }
+  // ⚡ Step 1: Run a transaction for atomic matching
+  const result = await runTransaction(db, async (transaction) => {
+    const freshQ = query(
+      waitingRef,
+      where("word", "==", word),
+      where("createdAt", ">", threeMinutesAgo),
+      orderBy("createdAt", "asc"),
+      limit(1)
+    );
 
- // ⚡ Step 2: Try to find a match
-const freshQ = query(
-  waitingRef,
-  where("word", "==", word),
-  where("createdAt", ">", threeMinutesAgo),
-  orderBy("createdAt", "asc"),
-  limit(1)
-);
+    // Find potential match
+    const snapshot = await getDocs(freshQ);
+    const otherDoc = snapshot.docs.find((d) => d.id !== uid);
 
-const snapshot = await getDocs(freshQ);
-const otherDoc = snapshot.docs.find((d) => d.id !== uid);
+    if (otherDoc) {
+      const otherRef = doc(waitingRef, otherDoc.id);
+      const otherSnap = await transaction.get(otherRef);
 
-if (otherDoc) {
-  const otherData = otherDoc.data();
+      // Double-check existence before match
+      if (!otherSnap.exists) {
+        throw new Error("Other waiting user no longer exists");
+      }
 
-  // 🏠 Create chat room for both users
-  const chatRoomRef = await addDoc(collection(db, "chatRooms"), {
-    word,
-    users: [uid, otherData.userId],
-    createdAt: serverTimestamp(),
-    active: true,
-    expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
+      const otherData = otherSnap.data() as any;
+
+      // 🏠 Create chat room for both users atomically
+      const chatRoomRef = doc(collection(db, "chatRooms"));
+      transaction.set(chatRoomRef, {
+        word,
+        users: [uid, otherData.userId],
+        createdAt: serverTimestamp(),
+        active: true,
+        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
+      });
+
+      // Remove both waiting docs atomically
+      transaction.delete(otherRef);
+      transaction.delete(userDocRef);
+
+      console.log(`✅ Match created: ${uid} ↔ ${otherData.userId}`);
+      return { matched: true, roomId: chatRoomRef.id };
+    }
+
+    // ⏳ No match found → add this user to waitingWords
+    transaction.set(userDocRef, {
+      word,
+      userId: uid,
+      createdAt: serverTimestamp(),
+      expiresAt: Timestamp.fromMillis(Date.now() + 3600 * 1000),
+    });
+
+    console.log(`🕓 Added ${uid} to waitingWords for '${word}'`);
+    return { matched: false };
   });
 
-  await deleteDoc(otherDoc.ref);
-  await deleteDoc(userDocRef);
-
-  return { matched: true, roomId: chatRoomRef.id };
-}
-
-// ⏳ No match → add current user to waiting list
-await setDoc(userDocRef, {
-  word,
-  userId: uid,
-  createdAt: serverTimestamp(),
-  expiresAt: Timestamp.fromMillis(Date.now() + 3600 * 1000),
-});
-
-return { matched: false };
+  return result;
 }
