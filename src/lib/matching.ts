@@ -10,7 +10,6 @@ import {
   addDoc,
   deleteDoc,
   serverTimestamp,
-  runTransaction,
   Timestamp,
   doc,
 } from "firebase/firestore";
@@ -52,48 +51,43 @@ export async function matchWord(word: string) {
     await deleteDoc(old.ref);
   }
 
-  // ⚡ Step 2: Try to find a match
-  const result = await runTransaction(db, async (transaction) => {
-    const freshQ = query(
-      waitingRef,
-      where("word", "==", word),
-      where("createdAt", ">", threeMinutesAgo),
-      orderBy("createdAt", "asc"),
-      limit(1)
-    );
+ // ⚡ Step 2: Try to find a match
+const freshQ = query(
+  waitingRef,
+  where("word", "==", word),
+  where("createdAt", ">", threeMinutesAgo),
+  orderBy("createdAt", "asc"),
+  limit(1)
+);
 
-    const snapshot = await getDocs(freshQ);
-    const otherDoc = snapshot.docs.find((d) => d.id !== uid);
+const snapshot = await getDocs(freshQ);
+const otherDoc = snapshot.docs.find((d) => d.id !== uid);
 
-    if (otherDoc) {
-      const otherData = otherDoc.data();
+if (otherDoc) {
+  const otherData = otherDoc.data();
 
-      // 🏠 Create chat room for both users
-      const chatRoomRef = await addDoc(collection(db, "chatRooms"), {
-        word,
-        users: [uid, otherData.userId],
-        createdAt: serverTimestamp(),
-        active: true,
-        expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
-      });
-
-      // Clean up both waiting docs
-      await deleteDoc(otherDoc.ref);
-      await deleteDoc(userDocRef);
-
-      return { matched: true, roomId: chatRoomRef.id };
-    }
-
-    // ⏳ No match → add current user to waiting list
-    await setDoc(userDocRef, {
-      word,
-      userId: uid,
-      createdAt: serverTimestamp(),
-      expiresAt: Timestamp.fromMillis(Date.now() + 3600 * 1000),
-    });
-
-    return { matched: false };
+  // 🏠 Create chat room for both users
+  const chatRoomRef = await addDoc(collection(db, "chatRooms"), {
+    word,
+    users: [uid, otherData.userId],
+    createdAt: serverTimestamp(),
+    active: true,
+    expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
   });
 
-  return result;
+  await deleteDoc(otherDoc.ref);
+  await deleteDoc(userDocRef);
+
+  return { matched: true, roomId: chatRoomRef.id };
+}
+
+// ⏳ No match → add current user to waiting list
+await setDoc(userDocRef, {
+  word,
+  userId: uid,
+  createdAt: serverTimestamp(),
+  expiresAt: Timestamp.fromMillis(Date.now() + 3600 * 1000),
+});
+
+return { matched: false };
 }
