@@ -18,43 +18,42 @@ import { auth } from "./firebase";
 
 const db = getFirestore();
 
+// 🧹 Cancel waiting entry for current user
 export async function cancelWaitingWord() {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
 
-  const waitingRef = collection(db, "waitingWords");
-  const q = query(waitingRef, where("userId", "==", uid));
-  const snapshot = await getDocs(q);
-  for (const docSnap of snapshot.docs) {
-    await deleteDoc(docSnap.ref);
+  const userDocRef = doc(db, "waitingWords", uid);
+
+  try {
+    await deleteDoc(userDocRef);
+    console.log("Removed waitingWords entry for", uid);
+  } catch (err) {
+    console.warn("No waitingWords entry to remove or insufficient permissions:", err);
   }
-  console.log("Removed waitingWords entry for", uid);
 }
 
+// 🤝 Match or wait for a user with the same word
 export async function matchWord(word: string) {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error("No user signed in");
 
   const waitingRef = collection(db, "waitingWords");
+  const userDocRef = doc(waitingRef, uid);
   const threeMinutesAgo = Timestamp.fromMillis(Date.now() - 3 * 60 * 1000);
 
-  // Step 0: Remove any old waiting docs for this user
-  const existingDocs = await getDocs(
-    query(waitingRef, where("userId", "==", uid))
-  );
-  for (const docSnap of existingDocs.docs) {
-    await deleteDoc(docSnap.ref);
-  }
+  // 🧹 Step 0: Clean up this user's old doc (direct access, no query)
+  await deleteDoc(userDocRef).catch(() => {});
 
-  // Step 1: Delete waiting entries older than 3 min
+  // 🧹 Step 1: Delete entries older than 3 min (optional global cleanup)
   const oldQ = query(waitingRef, where("createdAt", "<", threeMinutesAgo));
   const oldDocs = await getDocs(oldQ);
-  for (const docSnap of oldDocs.docs) {
-    await deleteDoc(docSnap.ref);
+  for (const old of oldDocs.docs) {
+    await deleteDoc(old.ref);
   }
 
-  // Step 2: Run transaction to find a match
-  const result = await runTransaction(db, async () => {
+  // ⚡ Step 2: Try to find a match
+  const result = await runTransaction(db, async (transaction) => {
     const freshQ = query(
       waitingRef,
       where("word", "==", word),
@@ -64,12 +63,12 @@ export async function matchWord(word: string) {
     );
 
     const snapshot = await getDocs(freshQ);
-    const otherDoc = snapshot.docs.find((d) => d.data().userId !== uid);
+    const otherDoc = snapshot.docs.find((d) => d.id !== uid);
 
     if (otherDoc) {
       const otherData = otherDoc.data();
 
-      // Create chat room
+      // 🏠 Create chat room for both users
       const chatRoomRef = await addDoc(collection(db, "chatRooms"), {
         word,
         users: [uid, otherData.userId],
@@ -78,14 +77,15 @@ export async function matchWord(word: string) {
         expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
       });
 
-      // Clean up matched user’s waiting doc
+      // Clean up both waiting docs
       await deleteDoc(otherDoc.ref);
+      await deleteDoc(userDocRef);
 
       return { matched: true, roomId: chatRoomRef.id };
     }
 
-    // No match yet → add yourself
-    await setDoc(doc(waitingRef, uid), {
+    // ⏳ No match → add current user to waiting list
+    await setDoc(userDocRef, {
       word,
       userId: uid,
       createdAt: serverTimestamp(),

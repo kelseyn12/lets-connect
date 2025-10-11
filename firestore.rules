@@ -2,49 +2,65 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ✅ Each user only accesses their own waiting word
+    // 🕒 WAITING WORDS
     match /waitingWords/{userId} {
+      // Users can create, update, and delete their own waiting word
       allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // ✅ Allow matchmaking queries (read-only)
+      // This lets users search for others waiting on the same "word"
+      allow list, get: if request.auth != null;
     }
 
-    // ✅ Chat rooms
+    // 💬 CHAT ROOMS
     match /chatRooms/{roomId} {
-
-      // Read/Write only if you're one of the users
+      // Read only if you're one of the participants
       allow read: if request.auth != null && request.auth.uid in resource.data.users;
+
+      // Create only if the authenticated user is one of the intended users
       allow create: if request.auth != null
         && request.resource.data.users.size() == 2
         && request.auth.uid in request.resource.data.users
         && request.resource.data.active is bool
         && request.resource.data.createdAt is timestamp;
 
+      // Allow limited updates (active/typing/expiresAt only)
       allow update: if request.auth != null
         && request.auth.uid in resource.data.users
-        // Prevent users from adding themselves to others’ chats or editing user lists
         && request.resource.data.users == resource.data.users
-        // Only certain fields allowed to change
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'active',
             'typing',
             'expiresAt'
           ]);
 
-      // ✅ Messages inside chatRooms
+      // 🚫 Prevent deletion from frontend
+      allow delete: if false;
+
+      // 📩 MESSAGES inside each chat room
       match /messages/{messageId} {
+        // Only participants can read messages
         allow read: if request.auth != null
           && request.auth.uid in get(/databases/$(database)/documents/chatRooms/$(roomId)).data.users;
 
+        // Only participants can send messages
         allow create: if request.auth != null
           && request.auth.uid in get(/databases/$(database)/documents/chatRooms/$(roomId)).data.users
-          // Validate message fields
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 500
-          && request.resource.data.createdAt is timestamp;
+          && (
+              !('createdAt' in request.resource.data)
+              || request.resource.data.createdAt is timestamp
+              || request.resource.data.createdAt == request.time
+          );
+
+        // 🚫 No direct message deletion from frontend
+        allow delete: if false;
       }
     }
 
-    // 🚫 Remove dev fallback for production
+    // 🚫 DEFAULT DENY — everything else blocked
     match /{document=**} {
       allow read, write: if false;
     }

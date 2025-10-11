@@ -93,36 +93,46 @@ export const cleanupOldEntries = onSchedule(
   async (): Promise<void> => {
     const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // Remove old waitingWords
+    // 🧹 Remove old waitingWords
     const waitingSnap = await db
       .collection("waitingWords")
       .where("createdAt", "<", threeMinutesAgo)
       .get();
+    for (const doc of waitingSnap.docs) await doc.ref.delete();
 
-    for (const doc of waitingSnap.docs) {
-      await doc.ref.delete();
-    }
-
-    // Remove inactive or expired chatRooms
+    // 🧹 Remove inactive or expired chatRooms
     const roomsSnap = await db
       .collection("chatRooms")
       .where("active", "==", false)
       .get();
-
     for (const doc of roomsSnap.docs) {
       const data = doc.data();
       const expired =
-        data.expiresAt && data.expiresAt.toDate() < new Date(tenMinutesAgo);
-      if (expired) {
-        await doc.ref.delete();
+        data.expiresAt && data.expiresAt.toDate() < tenMinutesAgo;
+      if (expired) await doc.ref.delete();
+    }
+
+    // 🧹 Remove anonymous accounts older than 24h
+    const auth = admin.auth();
+    const list = await auth.listUsers(1000);
+    const anonUsers = list.users.filter(
+      (u) => u.providerData.length === 0 && u.metadata.creationTime
+    );
+
+    for (const user of anonUsers) {
+      const created = new Date(user.metadata.creationTime!);
+      if (created < oneDayAgo) {
+        console.log(`Deleting stale anonymous user: ${user.uid}`);
+        await auth.deleteUser(user.uid);
+        await db.collection("waitingWords").doc(user.uid).delete().catch(() => {});
       }
     }
 
-    console.log("🧹 Cleanup completed at", new Date().toISOString());
+    console.log("🧹 Full cleanup completed at", new Date().toISOString());
   }
 );
-
 
 // 🚦 3️⃣ Rate limit message spam per user per room
 export const rateLimitMessages = functions.firestore.onDocumentCreated(
