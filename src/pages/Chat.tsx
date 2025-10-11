@@ -112,6 +112,21 @@ export default function Chat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isOtherTyping]);
 
+  // 🧠 Handle typing updates
+  const handleTyping = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newText = e.target.value;
+    setText(newText);
+
+    if (!roomId || !uid) return;
+    const roomRef = doc(db, "chatRooms", roomId);
+    await updateDoc(roomRef, { typing: uid });
+
+    if (typingTimeout.current) clearTimeout(typingTimeout.current);
+    typingTimeout.current = setTimeout(async () => {
+      await updateDoc(roomRef, { typing: null });
+    }, 1500);
+  };
+
   // Handle sending messages
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -146,95 +161,90 @@ export default function Chat() {
     navigate("/");
   };
 
-  // Mark room inactive if user closes tab
+  // 🕒 Auto-end chat after inactivity + show countdown
   useEffect(() => {
-    const handleUnload = async () => {
-      if (!roomId) return;
-      const roomRef = doc(db, "chatRooms", roomId);
-      await updateDoc(roomRef, { active: false });
+    if (!roomId || !roomActive) return;
+
+    const totalTimeout = 10 * 60 * 1000; // 10 minutes
+    const countdownStart = 30; // seconds remaining to show warning
+
+    const inactivityRef = { current: null as ReturnType<typeof setTimeout> | null };
+    const countdownStartRef = { current: null as ReturnType<typeof setTimeout> | null };
+    const countdownIntervalRef = { current: null as ReturnType<typeof setInterval> | null };
+
+    const clearTimers = () => {
+      if (inactivityRef.current) clearTimeout(inactivityRef.current);
+      if (countdownStartRef.current) clearTimeout(countdownStartRef.current);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      inactivityRef.current = null;
+      countdownStartRef.current = null;
+      countdownIntervalRef.current = null;
+      setTimeLeft(null);
     };
 
-    window.addEventListener("beforeunload", handleUnload);
-    return () => window.removeEventListener("beforeunload", handleUnload);
-  }, [roomId]);
+    const startTimers = () => {
+      clearTimers();
 
-  // Handle typing updates
-  const handleTyping = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newText = e.target.value;
-    setText(newText);
+      // Main timeout for ending the chat
+      inactivityRef.current = setTimeout(async () => {
+        const roomRef = doc(db, "chatRooms", roomId);
+        await updateDoc(roomRef, { active: false });
+        setRoomActive(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: "system-timeout",
+            text: "Chat ended due to inactivity ⏰",
+            senderId: "system",
+          },
+        ]);
+        clearTimers();
+      }, totalTimeout);
 
-    if (!roomId || !uid) return;
-    const roomRef = doc(db, "chatRooms", roomId);
-    await updateDoc(roomRef, { typing: uid });
+      // Countdown start (T - 30s)
+      countdownStartRef.current = setTimeout(() => {
+        let secs = countdownStart;
+        setTimeLeft(secs);
+        countdownIntervalRef.current = setInterval(() => {
+          secs -= 1;
+          setTimeLeft(secs);
+          if (secs <= 0 && countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+          }
+        }, 1000);
+      }, totalTimeout - countdownStart * 1000);
+    };
 
-    if (typingTimeout.current) clearTimeout(typingTimeout.current);
-    typingTimeout.current = setTimeout(async () => {
-      await updateDoc(roomRef, { typing: null });
-    }, 1500);
-  };
+    const bump = () => {
+      if (!roomId || !roomActive) return;
+      startTimers();
+    };
 
-//  Auto-end chat after inactivity + show countdown
-useEffect(() => {
-  if (!roomId || !roomActive) return;
+    // Start timers initially
+    startTimers();
 
-  let inactivityTimer: ReturnType<typeof setTimeout>;
-  let countdownTimer: ReturnType<typeof setInterval>;
-  const totalTimeout = 10 * 60 * 1000; // 10 minutes
-  const countdownStart = 30; // seconds remaining to show warning
+    // Reset on user interaction
+    const onActivity = () => bump();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") bump();
+    };
 
-  const startTimer = () => {
-    clearTimeout(inactivityTimer);
-    clearInterval(countdownTimer);
-    setTimeLeft(null);
+    window.addEventListener("keydown", onActivity);
+    window.addEventListener("click", onActivity);
+    window.addEventListener("mousemove", onActivity);
+    window.addEventListener("touchstart", onActivity, { passive: true });
+    window.addEventListener("visibilitychange", onVisibility);
 
-    inactivityTimer = setTimeout(async () => {
-      const roomRef = doc(db, "chatRooms", roomId);
-      await updateDoc(roomRef, { active: false });
-      setRoomActive(false);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: "system-timeout",
-          text: "Chat ended due to inactivity ⏰",
-          senderId: "system",
-        },
-      ]);
-    }, totalTimeout);
-
-    // Start 30-second countdown before timeout
-    const countdownDelay = totalTimeout - countdownStart * 1000;
-    setTimeout(() => {
-      let seconds = countdownStart;
-      setTimeLeft(seconds);
-      countdownTimer = setInterval(() => {
-        seconds -= 1;
-        setTimeLeft(seconds);
-        if (seconds <= 0) {
-          clearInterval(countdownTimer);
-        }
-      }, 1000);
-    }, countdownDelay);
-  };
-
-  // Start initial timer
-  startTimer();
-
-  // Reset timer on user activity
-  const resetOnActivity = () => startTimer();
-
-  window.addEventListener("keydown", resetOnActivity);
-  window.addEventListener("click", resetOnActivity);
-  window.addEventListener("mousemove", resetOnActivity);
-
-  return () => {
-    clearTimeout(inactivityTimer);
-    clearInterval(countdownTimer);
-    window.removeEventListener("keydown", resetOnActivity);
-    window.removeEventListener("click", resetOnActivity);
-    window.removeEventListener("mousemove", resetOnActivity);
-  };
-}, [roomId, roomActive]);
-
+    return () => {
+      clearTimers();
+      window.removeEventListener("keydown", onActivity);
+      window.removeEventListener("click", onActivity);
+      window.removeEventListener("mousemove", onActivity);
+      window.removeEventListener("touchstart", onActivity);
+      window.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [roomId, roomActive, messages.length, text]);
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-tr from-blue-50 to-green-100">
