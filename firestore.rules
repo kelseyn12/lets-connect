@@ -28,11 +28,8 @@ service cloud.firestore {
       allow update: if request.auth != null
         && request.auth.uid in resource.data.users
         && request.resource.data.users == resource.data.users
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'active',
-            'typing',
-            'expiresAt'
-          ]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasAll(['active', 'typing', 'expiresAt']) == false
+        && request.resource.data.diff(resource.data).affectedKeys().hasAny(['active', 'typing', 'expiresAt']);
 
       // 🚫 Prevent deletion from frontend
       allow delete: if false;
