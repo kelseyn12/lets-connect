@@ -13,12 +13,9 @@ export default function Home() {
     setLoading(true);
 
     try {
-      const result = await matchWord(word.trim().toLowerCase());
-      if (result.matched) {
-        navigate(`/chat?roomId=${result.roomId}`);
-      } else {
-        navigate(`/connecting?word=${word.trim().toLowerCase()}`);
-      }
+      await matchWord(word.trim().toLowerCase());
+      // Cloud Function will handle matching, navigate to connecting page
+      navigate(`/connecting?word=${word.trim().toLowerCase()}`);
     } catch (err) {
       console.error("Error:", err);
     } finally {
