@@ -50,6 +50,11 @@ service cloud.firestore {
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 500;
 
+        // Allow participants to update seenBy field
+        allow update: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/chatRooms/$(roomId)).data.users
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seenBy']);
+
         // 🚫 No direct message deletion from frontend
         allow delete: if false;
       }
